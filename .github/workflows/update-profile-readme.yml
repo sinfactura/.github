@@ -1,0 +1,160 @@
+# Destination: sinfactura/.github/.github/workflows/update-profile-readme.yml
+#
+# Daily refresh of the org README cockpit section.
+# Queries GitHub across all org repos and substitutes the {{PLACEHOLDERS}}
+# in profile/README.md between the <!-- cockpit:start --> / <!-- cockpit:end --> markers.
+#
+# Runs:
+#   - Daily at 09:00 UTC (06:00 Buenos Aires)
+#   - On manual dispatch
+#   - When the template itself changes
+#
+# Uses the default GITHUB_TOKEN for org-level read access.
+# For private repos, add an ORG_READ_TOKEN secret with `repo` + `read:org` scope
+# and change the env var below.
+
+name: Update org profile README
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "profile/README.md"
+      - ".github/workflows/update-profile-readme.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-profile-readme
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect cockpit data
+        id: data
+        env:
+          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          org=sinfactura
+          today=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          seven_days_ago=$(date -u -d "7 days ago" +"%Y-%m-%d" 2>/dev/null || date -u -v-7d +"%Y-%m-%d")
+          thirty_days_ago=$(date -u -d "30 days ago" +"%Y-%m-%d" 2>/dev/null || date -u -v-30d +"%Y-%m-%d")
+
+          # Helper: org-wide issue search
+          search() {
+            gh api -X GET search/issues -f q="org:$org $1" -f per_page=50 --jq '.items'
+          }
+
+          p0=$(search 'is:issue is:open label:"P0: launch-blocker"')
+          p1=$(search 'is:issue is:open label:"P1: this-sprint"')
+          bugs=$(search 'is:issue is:open label:type:bug')
+          customer=$(search 'is:issue is:open label:source:customer')
+          in_progress=$(search 'is:issue is:open label:"status:in-progress"')
+          epics=$(search 'is:issue is:open label:type:epic')
+          shipped7=$(search "is:pr is:merged merged:>=$seven_days_ago")
+          shipped30=$(search "is:pr is:merged merged:>=$thirty_days_ago")
+
+          format_list() {
+            echo "$1" | jq -r '
+              if length == 0 then "_None._"
+              else
+                map("- [\(.repository_url | split("/")[-1])#\(.number)](\(.html_url)) \(.title)")
+                | .[0:10]
+                | join("\n")
+              end
+            '
+          }
+
+          format_epic_list() {
+            echo "$1" | jq -r '
+              if length == 0 then "_None._"
+              else
+                map("- [\(.repository_url | split("/")[-1])#\(.number)](\(.html_url)) \(.title)")
+                | .[0:15]
+                | join("\n")
+              end
+            '
+          }
+
+          count() { echo "$1" | jq 'length'; }
+
+          {
+            echo "TIMESTAMP=$today"
+            echo "P0_COUNT=$(count "$p0")"
+            echo "P1_COUNT=$(count "$p1")"
+            echo "IN_PROGRESS_COUNT=$(count "$in_progress")"
+            echo "ACTIVE_EPICS_COUNT=$(count "$epics")"
+            echo "SHIPPED_7D_COUNT=$(count "$shipped7")"
+            echo "SHIPPED_30D_COUNT=$(count "$shipped30")"
+            echo "OPEN_BUGS_COUNT=$(count "$bugs")"
+            echo "CUSTOMER_REPORTED_COUNT=$(count "$customer")"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "ON_FIRE_LIST<<EOF"
+            format_list "$p0"
+            echo "EOF"
+
+            echo "IN_FLIGHT_LIST<<EOF"
+            format_list "$in_progress"
+            echo "EOF"
+
+            echo "SHIPPED_LIST<<EOF"
+            format_list "$shipped7"
+            echo "EOF"
+
+            echo "ACTIVE_EPICS_LIST<<EOF"
+            format_epic_list "$epics"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Render template
+        run: |
+          template=profile/README.md
+          tmp=$(mktemp)
+          python3 - <<'PY' > "$tmp"
+          import os, re, pathlib
+          src = pathlib.Path("profile/README.md").read_text()
+          env = os.environ
+          subs = {
+              "YYYY-MM-DDTHH:MM:SSZ": env["TIMESTAMP"],
+              "{{P0_COUNT}}": env["P0_COUNT"],
+              "{{P1_COUNT}}": env["P1_COUNT"],
+              "{{IN_PROGRESS_COUNT}}": env["IN_PROGRESS_COUNT"],
+              "{{ACTIVE_EPICS_COUNT}}": env["ACTIVE_EPICS_COUNT"],
+              "{{SHIPPED_7D_COUNT}}": env["SHIPPED_7D_COUNT"],
+              "{{SHIPPED_30D_COUNT}}": env["SHIPPED_30D_COUNT"],
+              "{{OPEN_BUGS_COUNT}}": env["OPEN_BUGS_COUNT"],
+              "{{CUSTOMER_REPORTED_COUNT}}": env["CUSTOMER_REPORTED_COUNT"],
+              "{{ON_FIRE_LIST}}": env["ON_FIRE_LIST"],
+              "{{IN_FLIGHT_LIST}}": env["IN_FLIGHT_LIST"],
+              "{{SHIPPED_LIST}}": env["SHIPPED_LIST"],
+              "{{ACTIVE_EPICS_LIST}}": env["ACTIVE_EPICS_LIST"],
+          }
+          for k, v in subs.items():
+              src = src.replace(k, v)
+          print(src, end="")
+          PY
+          mv "$tmp" profile/README.md
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet profile/README.md; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add profile/README.md
+          git commit -m "chore: refresh cockpit summary [skip ci]"
+          git push

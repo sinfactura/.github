@@ -25,4 +25,63 @@ React · TypeScript · Material UI · AWS Lambda · DynamoDB · Electron
 
 ---
 
+> 📡 **Cockpit** → [Project board](https://github.com/orgs/sinfactura/projects/1) · [Label taxonomy](https://github.com/sinfactura/.github/blob/main/.github/labels.yml)
+
+<!-- cockpit:start -->
+<!-- This block is auto-generated daily by .github/workflows/update-profile-readme.yml -->
+<!-- Last updated: YYYY-MM-DDTHH:MM:SSZ -->
+
+## State of the org
+
+| Signal | Count |
+|---|---|
+| 🔴 Open P0 (launch blockers) | `{{P0_COUNT}}` |
+| 🟠 Open P1 (this sprint) | `{{P1_COUNT}}` |
+| 🏃 In Progress | `{{IN_PROGRESS_COUNT}}` |
+| 📂 Active epics | `{{ACTIVE_EPICS_COUNT}}` |
+| 🚀 Shipped (last 7 days) | `{{SHIPPED_7D_COUNT}}` |
+| 🚀 Shipped (last 30 days) | `{{SHIPPED_30D_COUNT}}` |
+| 🐛 Open bugs | `{{OPEN_BUGS_COUNT}}` |
+| 🎧 Customer-reported open | `{{CUSTOMER_REPORTED_COUNT}}` |
+
+### 🔴 On fire
+
+{{ON_FIRE_LIST}}
+
+### 🏃 In flight
+
+{{IN_FLIGHT_LIST}}
+
+### 🚀 Recently shipped (last 7 days)
+
+{{SHIPPED_LIST}}
+
+### 📂 Active epics
+
+{{ACTIVE_EPICS_LIST}}
+
+<!-- cockpit:end -->
+
+---
+
+### Repositories
+
+| Repo | What it is | Stack |
+|---|---|---|
+| [app](https://github.com/sinfactura/app) | B2B admin / operations dashboard | React 19, MUI 7, Vite 8 |
+| [web](https://github.com/sinfactura/web) | E-commerce storefront (TodoInsumos) | React 19, MUI 7, Vite 8 |
+| [api](https://github.com/sinfactura/api) | Serverless backend | AWS CDK, Lambda, DynamoDB |
+| [landing](https://github.com/sinfactura/landing) | Marketing site (sinfactura.com) | React 19, Vite 6 |
+| [print](https://github.com/sinfactura/print) | Print agent v1 (legacy) | Electron |
+| [cloudprint](https://github.com/sinfactura/cloudprint) | Cloud print agent v2 | Electron |
+| [types](https://github.com/sinfactura/types) | Shared TypeScript types | TS |
+| [mobile](https://github.com/sinfactura/mobile) | Mobile companion (planned) | — |
+
+### Workflow
+
+- GitHub Issues is the **single source of truth** for all work
+- Every issue needs one `type:*`, one `P0-P3`, and one or more `area:*` labels — see [labels.yml](https://github.com/sinfactura/.github/blob/main/.github/labels.yml)
+- Every "In Progress" board item has a linked draft PR
+- PRs close issues with `Closes #NNN` and auto-deploy via Amplify (app/web/landing) or CDK (api)
+
 <sub>Buenos Aires, Argentina</sub>
