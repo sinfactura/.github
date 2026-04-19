@@ -29,36 +29,36 @@ React · TypeScript · Material UI · AWS Lambda · DynamoDB · Electron
 
 <!-- cockpit:start -->
 <!-- This block is auto-generated daily by .github/workflows/update-profile-readme.yml -->
-<!-- Last updated: YYYY-MM-DDTHH:MM:SSZ -->
+<!-- Last updated: 2026-04-19T23:12:04Z -->
 
 ## State of the org
 
 | Signal | Count |
 |---|---|
-| 🔴 Open P0 (launch blockers) | `{{P0_COUNT}}` |
-| 🟠 Open P1 (this sprint) | `{{P1_COUNT}}` |
-| 🏃 In Progress | `{{IN_PROGRESS_COUNT}}` |
-| 📂 Active epics | `{{ACTIVE_EPICS_COUNT}}` |
-| 🚀 Shipped (last 7 days) | `{{SHIPPED_7D_COUNT}}` |
-| 🚀 Shipped (last 30 days) | `{{SHIPPED_30D_COUNT}}` |
-| 🐛 Open bugs | `{{OPEN_BUGS_COUNT}}` |
-| 🎧 Customer-reported open | `{{CUSTOMER_REPORTED_COUNT}}` |
+| 🔴 Open P0 (launch blockers) | `0` |
+| 🟠 Open P1 (this sprint) | `0` |
+| 🏃 In Progress | `0` |
+| 📂 Active epics | `0` |
+| 🚀 Shipped (last 7 days) | `1` |
+| 🚀 Shipped (last 30 days) | `1` |
+| 🐛 Open bugs | `0` |
+| 🎧 Customer-reported open | `0` |
 
 ### 🔴 On fire
 
-{{ON_FIRE_LIST}}
+_None._
 
 ### 🏃 In flight
 
-{{IN_FLIGHT_LIST}}
+_None._
 
 ### 🚀 Recently shipped (last 7 days)
 
-{{SHIPPED_LIST}}
+- [.github#1](https://github.com/sinfactura/.github/pull/1) feat(cockpit): org-wide labels, auto README, daily refresh
 
 ### 📂 Active epics
 
-{{ACTIVE_EPICS_LIST}}
+_None._
 
 <!-- cockpit:end -->
 
