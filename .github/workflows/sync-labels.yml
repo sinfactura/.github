@@ -1,0 +1,79 @@
+# Destination: sinfactura/.github/.github/workflows/sync-labels.yml
+#
+# Syncs `.github/labels.yml` from this repo to every repo in the sinfactura org.
+# Runs on push to main when labels.yml changes, and on manual dispatch.
+#
+# Setup once:
+#   1. Create a fine-grained PAT with org-level "Metadata: read" + "Issues: write"
+#      (or a classic PAT with `repo` scope).
+#   2. Add it as ORG_LABELS_TOKEN secret on sinfactura/.github.
+#
+# What it does:
+#   - Lists every non-archived repo in the org
+#   - For each repo, applies labels.yml via github-label-sync
+#   - Does NOT delete labels not in labels.yml by default (safe mode)
+#     Set ALLOW_DELETE=true to enable destructive sync.
+
+name: Sync labels org-wide
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/labels.yml"
+      - ".github/workflows/sync-labels.yml"
+  workflow_dispatch:
+    inputs:
+      allow_delete:
+        description: "Delete labels not in labels.yml (destructive)"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Log changes without applying them"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  discover-repos:
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.list.outputs.repos }}
+    steps:
+      - id: list
+        env:
+          GH_TOKEN: ${{ secrets.ORG_LABELS_TOKEN }}
+        run: |
+          repos=$(gh repo list sinfactura --limit 200 --no-archived --json name -q '[.[].name]')
+          echo "repos=$repos" >> "$GITHUB_OUTPUT"
+          echo "Discovered repos:"
+          echo "$repos" | jq -r '.[]'
+
+  sync:
+    needs: discover-repos
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        repo: ${{ fromJson(needs.discover-repos.outputs.repos) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install github-label-sync
+        run: npm install -g github-label-sync
+
+      - name: Sync labels to ${{ matrix.repo }}
+        env:
+          GITHUB_ACCESS_TOKEN: ${{ secrets.ORG_LABELS_TOKEN }}
+        run: |
+          args="--labels .github/labels.yml"
+          if [ "${{ inputs.allow_delete }}" != "true" ]; then
+            args="$args --allow-added-labels"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            args="$args --dry-run"
+          fi
+          github-label-sync $args sinfactura/${{ matrix.repo }}

@@ -1,0 +1,80 @@
+# Destination: sinfactura/.github/.github/workflows/weekly-post.yml
+#
+# Every Friday 18:00 Buenos Aires (21:00 UTC), computes the weekly recap
+# and posts it to a webhook (Slack / Discord / whatever).
+#
+# Optional — skip this workflow entirely if no Slack/Discord exists yet.
+# The org README (update-profile-readme.yml) already surfaces the same numbers daily.
+#
+# Secrets required (only if enabling):
+#   - WEEKLY_WEBHOOK_URL: Slack incoming webhook or Discord webhook URL
+
+name: Weekly recap post
+
+on:
+  schedule:
+    - cron: "0 21 * * 5"  # Fri 21:00 UTC = 18:00 AR
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    if: ${{ secrets.WEEKLY_WEBHOOK_URL != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute window
+        id: window
+        run: |
+          seven_days_ago=$(date -u -d "7 days ago" +"%Y-%m-%d" 2>/dev/null || date -u -v-7d +"%Y-%m-%d")
+          today=$(date -u +"%Y-%m-%d")
+          echo "since=$seven_days_ago" >> "$GITHUB_OUTPUT"
+          echo "today=$today" >> "$GITHUB_OUTPUT"
+
+      - name: Pull counts
+        id: counts
+        env:
+          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          shipped=$(gh api -X GET search/issues \
+            -f q="org:sinfactura is:pr is:merged merged:>=${{ steps.window.outputs.since }}" \
+            -f per_page=100 --jq '.items | length')
+
+          bugs_fixed=$(gh api -X GET search/issues \
+            -f q="org:sinfactura is:pr is:merged merged:>=${{ steps.window.outputs.since }} label:type:bug" \
+            -f per_page=100 --jq '.items | length')
+
+          features=$(gh api -X GET search/issues \
+            -f q="org:sinfactura is:pr is:merged merged:>=${{ steps.window.outputs.since }} label:type:feature" \
+            -f per_page=100 --jq '.items | length')
+
+          open_p0=$(gh api -X GET search/issues \
+            -f q='org:sinfactura is:issue is:open label:"P0: launch-blocker"' \
+            -f per_page=50 --jq '.items | length')
+
+          open_p1=$(gh api -X GET search/issues \
+            -f q='org:sinfactura is:issue is:open label:"P1: this-sprint"' \
+            -f per_page=50 --jq '.items | length')
+
+          echo "shipped=$shipped" >> "$GITHUB_OUTPUT"
+          echo "bugs_fixed=$bugs_fixed" >> "$GITHUB_OUTPUT"
+          echo "features=$features" >> "$GITHUB_OUTPUT"
+          echo "open_p0=$open_p0" >> "$GITHUB_OUTPUT"
+          echo "open_p1=$open_p1" >> "$GITHUB_OUTPUT"
+
+      - name: Post to webhook
+        env:
+          WEBHOOK: ${{ secrets.WEEKLY_WEBHOOK_URL }}
+        run: |
+          payload=$(jq -n \
+            --arg shipped "${{ steps.counts.outputs.shipped }}" \
+            --arg bugs "${{ steps.counts.outputs.bugs_fixed }}" \
+            --arg features "${{ steps.counts.outputs.features }}" \
+            --arg p0 "${{ steps.counts.outputs.open_p0 }}" \
+            --arg p1 "${{ steps.counts.outputs.open_p1 }}" \
+            --arg today "${{ steps.window.outputs.today }}" \
+            '{
+              text: "🗓️ *SINFACTURA weekly recap* — week ending \($today)\n\n🚀 *\($shipped)* PRs merged · ✨ \($features) features · 🐛 \($bugs) bugs fixed\n📅 Next week: *\($p0)* P0 · *\($p1)* P1\n\n<https://github.com/orgs/sinfactura/projects/1|Open cockpit →>"
+            }')
+          curl -sS -X POST -H 'Content-Type: application/json' -d "$payload" "$WEBHOOK"
