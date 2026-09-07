@@ -50,23 +50,54 @@ jobs:
           seven_days_ago=$(date -u -d "7 days ago" +"%Y-%m-%d" 2>/dev/null || date -u -v-7d +"%Y-%m-%d")
           thirty_days_ago=$(date -u -d "30 days ago" +"%Y-%m-%d" 2>/dev/null || date -u -v-30d +"%Y-%m-%d")
 
-          # Helper: org-wide issue search
+          # Helper: org-wide issue search. Returns the WHOLE response, not `.items`
+          # — `count()` reads `.total_count` from it, because `.items` is one page
+          # and `per_page` caps it at 50. Counting the page silently reported "50"
+          # for any signal above 50, which is indistinguishable from a real 50.
           search() {
-            gh api -X GET search/issues -f q="org:$org $1" -f per_page=50 --jq '.items'
+            gh api -X GET search/issues -f q="org:$org $1" -f per_page=50
           }
 
-          p0=$(search 'is:issue is:open label:"P0: launch-blocker"')
-          p1=$(search 'is:issue is:open label:"P1: this-sprint"')
+          count() { echo "$1" | jq '.total_count'; }
+
+          # ⚠️ FAIL LOUDLY IF THE TOKEN CANNOT SEE THE ORG — do not publish zeros.
+          #
+          # Every repository in this org except `.github` itself is private, and the
+          # default GITHUB_TOKEN is scoped to THIS repository alone. Under it every
+          # query below returns zero, and the cockpit renders "0 P1, 0 epics, 0 bugs"
+          # — publishing an all-clear that is a lie rather than an error. That is
+          # exactly what happened: the block sat at all-zeros from 2026-04-19 while
+          # the api repo alone had 15 open P1s and 23 epics.
+          #
+          # An org with zero open issues is not a state worth rendering, so treating
+          # it as a failure costs nothing and closes the silent-lie path for good.
+          sentinel=$(search 'is:issue is:open')
+          if [ "$(count "$sentinel")" -eq 0 ]; then
+            echo "::error::org-wide issue search returned 0 open issues across sinfactura." \
+                 "The token cannot see private repositories — set the ORG_READ_TOKEN secret" \
+                 "(repo + read:org). Refusing to publish a cockpit of zeros."
+            exit 1
+          fi
+
+          # ⚠️ Priority labels are P0..P4, NOT the "P0: launch-blocker" long form in
+          # .github/labels.yml. The taxonomy file and the repositories have diverged;
+          # the short names are what every repo actually carries, so the query follows
+          # reality. Querying the long form matched nothing and reported 0.
+          p0=$(search 'is:issue is:open label:P0')
+          p1=$(search 'is:issue is:open label:P1')
           bugs=$(search 'is:issue is:open label:type:bug')
-          customer=$(search 'is:issue is:open label:source:customer')
-          in_progress=$(search 'is:issue is:open label:"status:in-progress"')
           epics=$(search 'is:issue is:open label:type:epic')
+          # "In flight" is open PRs. It used to query `status:in-progress`, a label
+          # that exists in no repository — in-progress is a project-board state, never
+          # a label, so that query could only ever return zero.
+          in_progress=$(search 'is:pr is:open')
           shipped7=$(search "is:pr is:merged merged:>=$seven_days_ago")
           shipped30=$(search "is:pr is:merged merged:>=$thirty_days_ago")
 
           format_list() {
             echo "$1" | jq -r '
-              if length == 0 then "_None._"
+              .items
+              | if length == 0 then "_None._"
               else
                 map("- [\(.repository_url | split("/")[-1])#\(.number)](\(.html_url)) \(.title)")
                 | .[0:10]
@@ -77,7 +108,8 @@ jobs:
 
           format_epic_list() {
             echo "$1" | jq -r '
-              if length == 0 then "_None._"
+              .items
+              | if length == 0 then "_None._"
               else
                 map("- [\(.repository_url | split("/")[-1])#\(.number)](\(.html_url)) \(.title)")
                 | .[0:15]
@@ -85,8 +117,6 @@ jobs:
               end
             '
           }
-
-          count() { echo "$1" | jq 'length'; }
 
           {
             echo "TIMESTAMP=$today"
@@ -97,7 +127,6 @@ jobs:
             echo "SHIPPED_7D_COUNT=$(count "$shipped7")"
             echo "SHIPPED_30D_COUNT=$(count "$shipped30")"
             echo "OPEN_BUGS_COUNT=$(count "$bugs")"
-            echo "CUSTOMER_REPORTED_COUNT=$(count "$customer")"
           } >> "$GITHUB_ENV"
 
           {
@@ -118,34 +147,75 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_ENV"
 
-      - name: Render template
+      - name: Render the cockpit block
         run: |
-          template=profile/README.md
-          tmp=$(mktemp)
-          python3 - <<'PY' > "$tmp"
-          import os, re, pathlib
-          src = pathlib.Path("profile/README.md").read_text()
-          env = os.environ
-          subs = {
-              "YYYY-MM-DDTHH:MM:SSZ": env["TIMESTAMP"],
-              "{{P0_COUNT}}": env["P0_COUNT"],
-              "{{P1_COUNT}}": env["P1_COUNT"],
-              "{{IN_PROGRESS_COUNT}}": env["IN_PROGRESS_COUNT"],
-              "{{ACTIVE_EPICS_COUNT}}": env["ACTIVE_EPICS_COUNT"],
-              "{{SHIPPED_7D_COUNT}}": env["SHIPPED_7D_COUNT"],
-              "{{SHIPPED_30D_COUNT}}": env["SHIPPED_30D_COUNT"],
-              "{{OPEN_BUGS_COUNT}}": env["OPEN_BUGS_COUNT"],
-              "{{CUSTOMER_REPORTED_COUNT}}": env["CUSTOMER_REPORTED_COUNT"],
-              "{{ON_FIRE_LIST}}": env["ON_FIRE_LIST"],
-              "{{IN_FLIGHT_LIST}}": env["IN_FLIGHT_LIST"],
-              "{{SHIPPED_LIST}}": env["SHIPPED_LIST"],
-              "{{ACTIVE_EPICS_LIST}}": env["ACTIVE_EPICS_LIST"],
-          }
-          for k, v in subs.items():
-              src = src.replace(k, v)
-          print(src, end="")
+          python3 - <<'PY'
+          import os, pathlib
+
+          # ⚠️ RENDER BETWEEN THE MARKERS — never substitute into the source.
+          #
+          # This step used to replace `{{PLACEHOLDER}}` tokens inside
+          # profile/README.md and write the result back over the same file. That is
+          # single-use by construction: the first run consumed every placeholder, and
+          # every run afterwards had nothing left to substitute, produced a byte-identical
+          # file, and hit the `git diff --quiet` early exit. The job reported success
+          # while committing nothing. Measured: the block sat frozen at its 2026-04-19
+          # values through two months of green runs.
+          #
+          # The block is regenerated from scratch between the sentinel comments on every
+          # run, so the rendered output is never also the template.
+          #
+          # ⚠️ Every line of `lines` is indented INSIDE this YAML block scalar. A bare
+          # column-0 line here terminates the `run: |` block and the workflow stops
+          # parsing — build the markdown with a joined list, never a column-0 heredoc.
+          e = os.environ
+          path = pathlib.Path("profile/README.md")
+          src = path.read_text()
+
+          START, END = "<!-- cockpit:start -->", "<!-- cockpit:end -->"
+          if START not in src or END not in src:
+              raise SystemExit("::error::cockpit markers missing from " + str(path))
+
+          lines = [
+              START,
+              "<!-- Auto-generated by .github/workflows/update-profile-readme.yml — do not edit by hand. -->",
+              "<!-- Last updated: " + e["TIMESTAMP"] + " -->",
+              "",
+              "## State of the org",
+              "",
+              "| Signal | Count |",
+              "|---|---|",
+              "| 🔴 Open P0 (launch blockers) | `" + e["P0_COUNT"] + "` |",
+              "| 🟠 Open P1 (this sprint) | `" + e["P1_COUNT"] + "` |",
+              "| 🏃 Open PRs | `" + e["IN_PROGRESS_COUNT"] + "` |",
+              "| 📂 Active epics | `" + e["ACTIVE_EPICS_COUNT"] + "` |",
+              "| 🚀 Shipped (last 7 days) | `" + e["SHIPPED_7D_COUNT"] + "` |",
+              "| 🚀 Shipped (last 30 days) | `" + e["SHIPPED_30D_COUNT"] + "` |",
+              "| 🐛 Open bugs | `" + e["OPEN_BUGS_COUNT"] + "` |",
+              "",
+              "### 🔴 On fire",
+              "",
+              e["ON_FIRE_LIST"],
+              "",
+              "### 🏃 In flight",
+              "",
+              e["IN_FLIGHT_LIST"],
+              "",
+              "### 🚀 Recently shipped (last 7 days)",
+              "",
+              e["SHIPPED_LIST"],
+              "",
+              "### 📂 Active epics",
+              "",
+              e["ACTIVE_EPICS_LIST"],
+              "",
+              END,
+          ]
+
+          head, _, rest = src.partition(START)
+          _, _, tail = rest.partition(END)
+          path.write_text(head + "\n".join(lines) + tail)
           PY
-          mv "$tmp" profile/README.md
 
       - name: Commit if changed
         run: |
