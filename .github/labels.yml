@@ -6,8 +6,72 @@
 # https://github.com/Financial-Times/github-label-sync
 #
 # Rule: every issue at creation must have at minimum
-#   one type:*, one priority (P0-P3), and one area:*
+#   one type:*, one priority (P0-P4), and one area:*
 # CI in each repo enforces this via a simple Action (see docs/cockpit/workflows/enforce-labels.yml).
+#
+# ─── What this file is, and what it is NOT ───────────────────────────────────
+#
+# It is a DESCRIPTION of the shared vocabulary every repo actually uses, not an
+# aspiration. When it and the repos disagree, the repos are right and this file
+# is the bug — every repo that files real work had drifted away from the
+# priority names below, which is how the public cockpit came to report 0 open
+# P0s and 0 P1s for months while api alone had 15 open P1s.
+#
+# The split is clean and worth stating: all EIGHT code repos carry `P0`-`P4`,
+# and the only three still holding the old long form are `.github`,
+# `.github-private` and `marketing` — none of which anyone files engineering
+# work in. Those three have no `P0`-`P4` at all.
+#
+# WARNING: a push to this file SYNCS IT ORG-WIDE ON MERGE (`sync-labels.yml`).
+# Adding a label here CREATES it in every non-archived repo. Removing one
+# deletes nothing on the normal path — the workflow passes
+# `--allow-added-labels` unless a `workflow_dispatch` explicitly ticks
+# `allow_delete`.
+#
+# The sync iterates `gh repo list sinfactura --no-archived`, which is ELEVEN
+# repos, not the eight anyone thinks of as "the product": .github,
+# .github-private, api, app, docs, landing, marketing, mobile, print, qa,
+# storefront. Two traps in that list, both of which have already produced wrong
+# measurements: `cloudprint` is the OLD NAME of `print` — the API redirects, so
+# querying both counts one repo twice — and `types` is ARCHIVED, so it is
+# excluded here however much its label set looks alive.
+#
+# Promotion rule for anything ADDED from here on, so this file does not silently
+# absorb every repo's noise: a label belongs if it is live in THREE OR MORE of
+# those eleven and is project vocabulary rather than one of GitHub's stock
+# defaults — `bug`, `documentation`, `enhancement`, `good first issue`,
+# `help wanted`, `invalid`, `question`, `duplicate`, `wontfix` — whose
+# prevalence measures repo CREATION, not use.
+#
+# ⚠️ `duplicate` and `wontfix` ARE stock defaults and ARE declared below. That
+# predates this rule and is left alone deliberately: removing them from this
+# file deletes nothing (see the --allow-added-labels note above) but would stop
+# the two being created in repos that lack them, which is a separate decision
+# from fixing the priority names. The rule binds future additions.
+#
+# CONSIDERED AND NOT PROMOTED, so the next reader does not re-derive it:
+# `performance` (4/11) is one of the three spellings named below and cannot be
+# blessed before that is settled; `idea` (3/11 — landing, mobile, storefront)
+# overlaps `type:feature` and carries a DIFFERENT description in each, so it
+# needs a decision rather than a silent promotion; `testing` (2/11 — print and
+# storefront) and `area:pricing` (2/11 — app and storefront) simply miss the
+# bar. ⚠️ Counting archived `types` puts both of the last two at 3 and makes
+# them look eligible; it is excluded from the sync and must be excluded here.
+#
+# Deliberately left REPO-LOCAL, so a destructive dispatch is known to delete
+# them: every `area:*` a single repo defines for its own domain map (api's
+# `area:catalog` / `area:notifications` / `area:payments`, app's `area:ai` /
+# `area:ecommerce` / `area:legal` / `area:multi-tenant` / `area:scheduling`,
+# api+app's `area:services`), api's `ci: nightly-suite` and `type:perf`,
+# mobile's `android` / `ios` / `native`, and cloudprint's `type:infra` /
+# `type:research` / `type:security`. An area map is the repo's own; declaring
+# one repo's domains org-wide puts `area:catalog` in `docs` and `qa`, where it
+# means nothing.
+#
+# UNRESOLVED, recorded rather than decided here: performance is spelled three
+# ways across the org — `area:perf` (declared below), `type:perf` (api) and
+# `performance` (five repos). Picking one silently would be the same class of
+# drift this file just fixed, so it needs its own decision.
 
 # ─── TYPE (exactly one) ──────────────────────────────────────────────
 - name: "type:bug"
@@ -33,18 +97,28 @@
   description: "Timeboxed investigation / research"
 
 # ─── PRIORITY (exactly one) ──────────────────────────────────────────
-- name: "P0: launch-blocker"
+# FIVE tiers, not four, and the names are bare `P0`-`P4`. This is not a rename
+# of the old `P0: launch-blocker` form — no repo carries BOTH; the eight code
+# repos carry these, with byte-identical colours and descriptions, while the
+# three non-code repos carry only the long form. The old P3 ("nice to have; no committed date") is
+# today's P4; P3 became a real backlog tier with a sweep. Copied verbatim from
+# the live labels rather than re-worded, so the sync is a no-op on merge
+# instead of restyling the ladder 409 closed issues already use.
+- name: "P0"
   color: "b60205"
-  description: "Blocks launch or production right now"
-- name: "P1: this-sprint"
+  description: "Critical · DROP EVERYTHING — prod down, data loss, or a deadline inside the fix window"
+- name: "P1"
   color: "d93f0b"
-  description: "Must land this sprint/week"
-- name: "P2: this-quarter"
+  description: "High · THIS SPRINT — core workflow degraded or someone blocked; workaround exists"
+- name: "P2"
   color: "fbca04"
-  description: "Target this quarter"
-- name: "P3: someday"
-  color: "d4c5f9"
-  description: "Nice to have; no committed date"
+  description: "Medium · THIS QUARTER — committed work with a horizon; nothing breaks by waiting"
+- name: "P3"
+  color: "0e8a16"
+  description: "Low · BACKLOG — agreed it should happen, but no horizon committed; swept twice a year"
+- name: "P4"
+  color: "c5def5"
+  description: "Lowest · SOMEDAY — not planned; no date, no owner. Close it if it rots"
 
 # ─── AREA (one or more) ──────────────────────────────────────────────
 - name: "area:auth"
@@ -130,3 +204,14 @@
 - name: "wontfix"
   color: "ffffff"
   description: "This will not be worked on"
+
+# ─── PROMOTED FROM REALITY ───────────────────────────────────────────────────
+# Clears the rule above — live in three or more of the eleven, project
+# vocabulary rather than a GitHub default, absent from this file until now.
+# Colours and descriptions are the live ones, so the sync does not restyle them.
+- name: "prelaunch"
+  color: "ededed"
+  description: "NOT a priority · closed pre-launch-era issue; retired launch labels collapsed here"
+- name: "dx"
+  color: "D876E3"
+  description: "Developer experience improvements"
